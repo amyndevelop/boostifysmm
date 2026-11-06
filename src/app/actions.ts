@@ -9,7 +9,7 @@ import { db } from '@/lib/db';
 import { reportDatabaseError } from '@/lib/database-errors';
 import { checkOrigin, createSession, digest, rateLimit, requireUser } from '@/lib/auth';
 import { approveDeposit, placeOrder } from '@/lib/orders';
-export type ActionResult = { error?: string; success?: string };
+export type ActionResult = { error?: string; success?: string; orderId?:string };
 async function safely(fn: () => Promise<ActionResult>): Promise<ActionResult> {
   try { await checkOrigin(); return await fn(); }
   catch (e) {
@@ -47,11 +47,17 @@ export async function logout() {
   (await cookies()).delete('boostify_session'); redirect('/login');
 }
 export async function submitOrder(input: unknown): Promise<ActionResult> {
-  return safely(async () => {
-    const user = await requireUser(); await rateLimit(`orders:${user.id}`, 60);
-    const order = await placeOrder(user.id, input); revalidatePath('/');
-    return { success: `Pedido ${order.id} recibido. Tu saldo quedó reservado.` };
-  });
+ return safely(async()=>{
+  const user=await requireUser();await rateLimit(`orders:${user.id}`,60);
+  const order=await placeOrder(user.id,input);
+  const {dispatchOrder}=await import('@/lib/worker');
+  try{await dispatchOrder(order.id);}catch{/* The stored queue/request state is authoritative; never resend an uncertain claim. */}
+  const result=await db.order.findUniqueOrThrow({where:{id:order.id}});
+  revalidatePath('/');revalidatePath('/admin/pedidos');
+  if(result.status==='REVIEW_REQUIRED'||result.status==='SUBMITTING')return {orderId:order.id,error:'El resultado del envío necesita revisión. Tu saldo sigue reservado. No repitas la compra; consultá Mis pedidos o soporte.'};
+  if(result.status==='FAILED')return {orderId:order.id,error:'El proveedor no aceptó el pedido. El saldo reservado fue liberado. Revisá Mis pedidos.'};
+  return {orderId:order.id,success:result.status==='PENDING'?`Pedido ${order.id} recibido y en cola de envío.`:`Pedido ${order.id} recibido y enviado. Podés seguirlo en Mis pedidos.`};
+ });
 }
 export async function requestDeposit(_: ActionResult, form: FormData): Promise<ActionResult> {
   return safely(async () => {

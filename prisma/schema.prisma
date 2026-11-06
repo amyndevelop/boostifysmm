@@ -142,6 +142,24 @@ model Order {
   providerCostSnapshot Decimal? @db.Decimal(18,6)
   providerCurrencySnapshot String?
   exchangeRateSnapshot Decimal? @db.Decimal(18,6)
+  financialState String @default("RESERVED")
+  providerEndpointSnapshot String?
+  providerCredentialFingerprint String?
+  refillSupportedSnapshot Boolean @default(false)
+  cancelSupportedSnapshot Boolean @default(false)
+  realCost Decimal? @db.Decimal(18,4)
+  providerCharge Decimal? @db.Decimal(24,8)
+  providerChargeCurrency String?
+  startCount Int?
+  remains Int?
+  refunded Decimal @default(0) @db.Decimal(18,2)
+  nextSyncAt DateTime @default(now())
+  syncLeaseUntil DateTime?
+  syncFailures Int @default(0)
+  lastSyncedAt DateTime?
+  requests ProviderRequest[]
+  operations ProviderOperation[]
+  refunds OrderRefund[]
   status OrderStatus @default(PENDING)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -149,6 +167,8 @@ model Order {
   job Job?
   @@unique([userId, idempotencyKey])
   @@index([status, createdAt])
+  @@index([nextSyncAt, status])
+  @@unique([providerSnapshot, externalId])
   @@index([userId, createdAt])
 }
 model OrderEvent {
@@ -165,6 +185,7 @@ model Job {
   order Order @relation(fields: [orderId], references: [id])
   state String @default("PENDING")
   claimedAt DateTime?
+  leaseToken String?
   createdAt DateTime @default(now())
   @@index([state, createdAt])
 }
@@ -281,4 +302,40 @@ model WalletAdjustment {
   createdAt DateTime @default(now())
   @@unique([actorId, idempotencyKey])
   @@index([userId, createdAt])
+}
+
+model ProviderRequest {
+  id String @id @default(cuid())
+  orderId String @unique
+  order Order @relation(fields: [orderId], references: [id])
+  outcome String @default("INTENT")
+  externalId String?
+  errorCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model ProviderOperation {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  kind String
+  status String @default("SUBMITTING")
+  idempotencyKey String
+  externalId String?
+  leaseUntil DateTime?
+  nextSyncAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([orderId, idempotencyKey])
+  @@index([status, nextSyncAt])
+}
+model OrderRefund {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  actorId String
+  amount Decimal @db.Decimal(18,2)
+  reason String
+  idempotencyKey String @unique
+  createdAt DateTime @default(now())
 }

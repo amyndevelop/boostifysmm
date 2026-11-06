@@ -1,12 +1,14 @@
 export type ProviderService = { id: string; name: string; rate: string; currency?: string; min: number; max: number };
+export type ProviderOrderStatus={status:string;charge?:string;currency?:string;remains?:string;start_count?:string};
 export interface SmmProvider {
  getServices(): Promise<ProviderService[]>;
  getBalance(): Promise<{ balance: string; currency: string }>;
  createOrder(order: { internalId: string; service: string; quantity: number; link: string }): Promise<{ externalId: string }>;
- getOrderStatus(id: string): Promise<{ status: string }>;
- getMultipleOrderStatuses(ids: string[]): Promise<Record<string, { status: string } | { error: string }>>;
+ getOrderStatus(id: string): Promise<ProviderOrderStatus>;
+ getMultipleOrderStatuses(ids: string[]): Promise<Record<string, ProviderOrderStatus | { error: string }>>;
  requestRefill?: (id: string) => Promise<{ id: string }>;
  requestCancellation?: (id: string) => Promise<void>;
+ getRefillStatus?: (id:string)=>Promise<{status:string}>;
 }
 export class DemoProvider implements SmmProvider {
  private assertDemo() { if (process.env.APP_MODE !== 'demo') throw new Error('El adaptador demo está deshabilitado.'); }
@@ -16,9 +18,8 @@ export class DemoProvider implements SmmProvider {
  async getOrderStatus() { this.assertDemo(); return { status: 'COMPLETED' }; }
  async getMultipleOrderStatuses(ids: string[]) { this.assertDemo(); return Object.fromEntries(ids.map(id => [id, { status: 'COMPLETED' }])); }
 }
-// No endpoint, payload or status mappings are assumed for SMMTAKE.
-// A production adapter must be added only after official documentation is verified.
+// Demo factory retained for isolated development. Configured real providers use configured.ts.
 export function providerFor(kind: string): SmmProvider {
  if (kind === 'DEMO' && process.env.APP_MODE === 'demo') return new DemoProvider();
- throw new Error('Proveedor real pendiente de documentación y configuración.');
+ throw new Error('Usá la fábrica de proveedores configurados para una API real.');
 }

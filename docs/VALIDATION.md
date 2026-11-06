@@ -20,7 +20,7 @@ Migración `20261106170000_catalog_management` aplicada y repetida sin cambios d
 
 Comprobaciones aprobadas: permisos del servidor; categorías ocultas y eliminación protegida; publicación selectiva; edición de precio/categoría sin alterar pedidos previos; conversión USD → ARS; conservación del costo nativo manual; actualización de costo sin modificar precio comercial; ocultamiento de orígenes ausentes; importación de 501 servicios en lotes; publicación, edición consecutiva y ocultamiento desde Chromium; costo privado ausente en la vista del cliente; pantalla móvil de 390 px sin desbordamiento.
 
-Las nuevas rutas administrativas se verifican con `scripts/verify-deployment.mjs` para incluir el compilador WASM de Prisma en Vercel. El envío real sigue deshabilitado y el backend rechaza esos pedidos antes de reservar fondos. No se realizaron llamadas ni compras reales en las pruebas.
+Las nuevas rutas administrativas se verifican con `scripts/verify-deployment.mjs` para incluir el compilador WASM de Prisma en Vercel. El envío real Default ahora está habilitado mediante el flujo confirmado y auditado. No se realizaron llamadas ni compras reales en las pruebas.
 
 ## Compatibilidad del listado del proveedor
 
@@ -33,3 +33,11 @@ La migración `20261106180000_user_balance_management` añade versión de usuari
 Chromium verificó crear una cuenta desde administración, acreditar ARS 1.000,25, descontar ARS 250,10 y obtener ARS 750,15; rechazar descuentos mayores al disponible; editar nombre/rol; buscar la cuenta; consultar el historial como cliente; vista móvil de 390 px sin desbordamiento. Los cuatro recorridos E2E pasaron. Los guardados del catálogo se esperan por la nueva versión confirmada del formulario, evitando comprobar avisos antiguos de éxito o esperar indefinidamente streams de Next.js.
 
 Todas las pruebas financieras usaron la base local de pruebas o cuentas explícitas de demo local. No se modificaron saldos de producción.
+
+## Pedidos reales y conciliación
+
+Pruebas con transporte simulado, sin compras externas: envío concurrente único, captura y liberación de reservas, rechazo explícito, timeout sin reintento, recuperación de interrupciones, vinculación de IDs, cancelación sin crédito automático, reintegro idempotente y limitado, entrega parcial con costo real, refill único y seguimiento, operación incierta, configuración inválida sin salida de red, estados desconocidos y aislamiento de usuarios. Integración: 50 resultados aprobados; unidad: 28 aprobados. Build con trazas Prisma WASM, lint y TypeScript aprobados.
+
+La programación de producción depende de los secretos y servicios del hosting; no se afirma haber configurado `CRON_SECRET` ni un worker externo. El cron incluido es diario, compatible con Hobby.
+
+Chromium: seis recorridos aprobados, incluidos reintegro administrativo confirmado, protección de sesión/origen del seguimiento, autenticación del cron y vista móvil sin desbordamiento.

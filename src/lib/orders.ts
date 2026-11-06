@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { db } from './db';
+import { credentialFingerprint } from './providers/configured';
 import { convertedCost } from './catalog';
 import { calculatePrice, quantitySchema, validateOrderLink } from './domain';
 export const orderSchema = z.object({ serviceId: z.string().min(1), quantity: quantitySchema, link: z.string(), idempotencyKey: z.uuid(), quotedPrice: z.string().regex(/^\d+\.\d{2}$/) });
@@ -23,7 +24,12 @@ export async function placeOrder(userId: string, input: unknown) {
     if (!service?.active || !service.provider.active || (service.categoryRef && !service.categoryRef.active) || (service.source && !service.source.available)) throw new Error('El servicio no está disponible.');
     if (service.provider.kind === 'DEMO' && process.env.APP_MODE !== 'demo') throw new Error('Servicio exclusivo de demostración.');
     if(service.currency!=='ARS' || (service.source && service.costCurrency!==service.source.currency)) throw new Error('Conversión de moneda pendiente de configuración.');
-    if(service.provider.kind!=='DEMO') throw new Error('Los pedidos reales aún no están habilitados. No se descontó saldo.');
+    if(process.env.ORDERS_ENABLED==='false')throw new Error('Los pedidos están pausados temporalmente.');
+    if(service.provider.kind!=='DEMO'){
+      if(process.env.APP_MODE==='demo')throw new Error('El modo demo no admite compras reales.');
+      if(!['SMMTAKE','SMM_V2'].includes(service.provider.kind)||!service.provider.endpoint||!service.provider.encryptedKey||!/^[a-f0-9]{64}$/i.test(process.env.PROVIDER_ENCRYPTION_KEY??''))throw new Error('El proveedor no está configurado para recibir pedidos.');
+      if(!/^[1-9]\d*$/.test(service.externalId)||(service.source&&service.source.type.toLowerCase()!=='default'))throw new Error('Este tipo de servicio todavía no admite compras.');
+    }
     const unitCost=service.source ? convertedCost(service.source.rate,service.source.currency,service.exchangeRate) : service.cost;
     const providerCost=service.source?.rate ?? service.manualProviderRate;
     if (data.quantity < Math.max(service.min,service.source?.min ?? service.min) || data.quantity > Math.min(service.max,service.source?.max ?? service.max)) throw new Error(`Ingresá entre ${service.min} y ${service.max} unidades.`);
@@ -32,7 +38,7 @@ export async function placeOrder(userId: string, input: unknown) {
     if (price.lte(0) || !price.eq(data.quotedPrice)) throw new Error('El precio cambió. Actualizá y confirmá nuevamente.');
     const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId } });
     if (wallet.currency !== service.currency || wallet.available.lt(price)) throw new Error('Saldo insuficiente. Cargá saldo para continuar.');
-    const order = await tx.order.create({ data: { userId, serviceId: service.id, idempotencyKey: data.idempotencyKey, fingerprint, quantity: data.quantity, link, price, rateSnapshot: service.rate, costSnapshot: new Prisma.Decimal(unitCost).mul(data.quantity).div(1000), providerCostSnapshot:new Prisma.Decimal(providerCost).mul(data.quantity).div(1000),providerCurrencySnapshot:service.costCurrency,exchangeRateSnapshot:service.exchangeRate,serviceName: service.name, network: service.network, providerSnapshot: service.providerId, externalServiceId: service.externalId, currency: service.currency, events: { create: { status: 'PENDING', message: 'Pedido recibido; saldo reservado.' } }, job: { create: {} } } });
+    const order = await tx.order.create({ data: { userId, serviceId: service.id, idempotencyKey: data.idempotencyKey, fingerprint, quantity: data.quantity, link, price, rateSnapshot: service.rate, costSnapshot: new Prisma.Decimal(unitCost).mul(data.quantity).div(1000), providerEndpointSnapshot:service.provider.endpoint,providerCredentialFingerprint:service.provider.encryptedKey?credentialFingerprint(service.provider.encryptedKey):null,refillSupportedSnapshot:service.source?.refill??false,cancelSupportedSnapshot:service.source?.cancel??false,providerCostSnapshot:new Prisma.Decimal(providerCost).mul(data.quantity).div(1000),providerCurrencySnapshot:service.costCurrency,exchangeRateSnapshot:service.exchangeRate,serviceName: service.name, network: service.network, providerSnapshot: service.providerId, externalServiceId: service.externalId, currency: service.currency, events: { create: { status: 'PENDING', message: 'Pedido recibido; saldo reservado.' } }, job: { create: {} } } });
     await tx.wallet.update({ where: { id: wallet.id }, data: { available: { decrement: price }, reserved: { increment: price } } });
     await tx.walletTransaction.create({ data: { walletId: wallet.id, key: `reserve:${order.id}`, type: 'RESERVE', amount: price.neg(), reservedDelta: price, reference: order.id } });
     await tx.notification.create({ data: { userId, message: `Recibimos tu pedido ${order.id}.` } });

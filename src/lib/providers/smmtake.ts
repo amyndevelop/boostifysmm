@@ -5,7 +5,9 @@ import type { SmmProvider } from './index';
 // Unlike that sample, HTTPS certificate/hostname verification stays enabled.
 const numericId = z.union([z.number().int().positive(), z.string().regex(/^[1-9]\d*$/)]).transform(String);
 const decimal = z.string().regex(/^\d+(\.\d+)?$/);
-const statusSchema = z.object({ charge: decimal, start_count: z.string(), status: z.string(), remains: z.string(), currency: z.string().length(3) });
+const statusNumber=z.union([z.string().regex(/^\d+$/),z.number().int().nonnegative()]).transform(String);
+const statusDecimal=z.union([decimal,z.number().finite().nonnegative()]).transform(String);
+const statusSchema = z.object({ charge: statusDecimal, start_count: statusNumber.optional(), status: z.string().trim().min(1).max(100), remains: statusNumber, currency: z.string().length(3).transform(s=>s.toUpperCase()) });
 const serviceInteger = z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/)]).transform(Number).refine(n=>Number.isSafeInteger(n)&&n<=2147483647);
 const serviceRate = z.union([decimal,z.number().finite().nonnegative()]).transform(String).refine(s=>/^\d+(\.\d+)?$/.test(s));
 // Capabilities may be absent or encoded as 0/1. Only explicitly true values
@@ -32,7 +34,7 @@ export class SmmtakeAdapter implements SmmProvider {
      if (text.length > 5_000_000) throw new ProviderError(mutation,'RESPONSE_TOO_LARGE');
      let body:unknown;
      try{body=JSON.parse(text);}catch{throw new ProviderError(mutation,'INVALID_JSON');}
-     if (body && typeof body === 'object' && 'error' in body) throw new ProviderError(false,'PROVIDER_REJECTED');
+     if (body && typeof body === 'object' && 'error' in body) throw new ProviderError(mutation&&'order' in body,'PROVIDER_REJECTED');
      return body;
    } catch (error) { if (error instanceof ProviderError) throw error; throw new ProviderError(mutation,error instanceof Error&&['AbortError','TimeoutError'].includes(error.name)?'TIMEOUT':'NETWORK_ERROR'); }
  }
@@ -60,10 +62,11 @@ export class SmmtakeAdapter implements SmmProvider {
    const orders = z.array(numericId).min(1).max(100).parse(ids).join(',');
    return z.record(z.string(), z.union([statusSchema, z.object({ error: z.string() })])).parse(await this.request('status', { orders }));
  }
- async requestRefill(id: string) { const result = z.object({ refill: numericId }).parse(await this.request('refill', { order: numericId.parse(id) }, true)); return { id: result.refill }; }
+ async requestRefill(id: string) { const parsed=z.object({refill:numericId}).safeParse(await this.request('refill',{order:numericId.parse(id)},true)); if(!parsed.success)throw new ProviderError(true);return {id:parsed.data.refill}; }
  async getRefillStatus(id: string) { return z.object({ status: z.string() }).parse(await this.request('refill_status', { refill: numericId.parse(id) })); }
  async requestCancellation(id: string) {
-   const result = z.array(z.object({ order: numericId, cancel: z.union([z.literal(1), z.object({ error: z.string() })]) })).parse(await this.request('cancel', { orders: numericId.parse(id) }, true));
-   if (result.length !== 1 || result[0].order !== id || result[0].cancel !== 1) throw new ProviderError(false);
+   const parsed=z.array(z.object({order:numericId,cancel:z.union([z.literal(1),z.literal('1'),z.object({error:z.string()})])})).safeParse(await this.request('cancel',{orders:numericId.parse(id)},true));
+   if(!parsed.success||parsed.data.length!==1||parsed.data[0].order!==id)throw new ProviderError(true);
+   if(typeof parsed.data[0].cancel==='object')throw new ProviderError(false,'PROVIDER_REJECTED');
  }
 }

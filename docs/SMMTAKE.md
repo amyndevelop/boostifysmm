@@ -19,6 +19,10 @@ Solo se admiten endpoints HTTPS con dominio público, sin credenciales, parámet
 
 Métodos implementados en `src/lib/providers/smmtake.ts`: servicios, balance, alta Default, estado individual/múltiple (hasta 100), refill individual, estado de refill, cancelación individual. Las respuestas de suscripciones/comentarios personalizados y operaciones múltiples de refill quedan fuera de esta entrega.
 
-`allowMutations` es `false` por defecto. El worker de la aplicación **solo procesa el proveedor demo**; no hay flujo de compra real habilitado. Las pruebas de alta inyectan un transporte falso. No se hizo ninguna compra ni prueba con clave real.
+El adaptador mantiene `allowMutations=false` por defecto; la fábrica de proveedores lo habilita para pedidos confirmados y operaciones autorizadas. El modo demo rechaza proveedores reales y las pruebas exigen transporte simulado.
 
-Antes de habilitar envíos comerciales: cargar cada proveedor desde el sistema y verificar su conexión, validar los servicios elegidos desde el catálogo, sus categorías, tarifas y cotizaciones manuales, configurar reembolsos reconocidos, añadir polling de estados/costo real y conciliación administrativa, y probar con autorización explícita. Un timeout de alta nunca se reintenta automáticamente; la API documentada no ofrece una clave de idempotencia para altas. El saldo queda reservado y el pedido pasa a revisión.
+El pedido conserva proveedor, endpoint, huella de credencial, tarifa, moneda y conversión histórica. Si cambia la configuración, soporte debe verificarla antes de vincular un pedido. Una aceptación captura la reserva una sola vez; un rechazo confirmado la libera. Un timeout o resultado ambiguo conserva la reserva y pasa a revisión: nunca se reintenta el alta automáticamente porque la API no ofrece idempotencia.
+
+Los estados incluyen cargo nativo, costo convertido, cantidad inicial y restante. Cancelación y refill se ofrecen solo si el servicio confirma esas capacidades; pedir cancelación no acredita saldo. En `/admin/pedidos` se concilian envíos inciertos, se vinculan IDs ya existentes y se registran reintegros manuales reconocidos, con motivo, confirmación, límite e historial inmutable. Nunca se crea otro pedido al conciliar. Una operación incierta también necesita revisión antes de solicitar otra.
+
+El envío real está habilitado, pero las pruebas automatizadas no consumen saldo del proveedor. Ver `DEPLOYMENT.md` para el seguimiento con panel abierto, cron diario Hobby o worker externo.

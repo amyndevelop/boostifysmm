@@ -10,7 +10,7 @@
 8. **Guardar servicio** crea o actualiza el registro; **Publicar/Ocultar** controla su aparición en el catálogo. Publicar requiere proveedor y categoría activos y un origen disponible de tipo Default. Los tipos con campos extra no se publican hasta incorporar esos formularios. Un servicio con pedidos puede ocultarse, pero no eliminarse.
 9. **Importar servicios** refresca costos, límites y disponibilidad en lotes sin sobrescribir nombre comercial, descripción, categorías ni precios de venta. Si un origen desaparece, deja de verse al cliente. Si cambia de moneda o sus nuevos límites invalidan tu configuración, se oculta para revisión. Los pedidos anteriores conservan sus importes y su cotización.
 10. Consultá tickets y respondé en la misma pantalla. Los clientes solo ven sus propios tickets y comprobantes.
-11. En Proveedores y APIs, cargá cada proveedor con su nombre, tipo compatible, URL y clave. Usá Probar conexión y después Importar servicios para ese proveedor. Dejar la clave vacía al editar conserva la existente. La importación no publica servicios y no habilita pedidos reales.
+11. En Proveedores y APIs, cargá cada proveedor con su nombre, tipo compatible, URL y clave. Usá Probar conexión y después Importar servicios para ese proveedor. Dejar la clave vacía al editar conserva la existente. La importación conserva servicios ocultos. Publicá los elegidos después de revisar precios, categoría, límites y conversión. Los servicios Default publicados pueden generar pedidos reales al confirmar.
 
 No existen retiros ni transferencias entre billeteras. No modificar balances directamente por SQL; el libro mayor debe explicar todo cambio. El crédito demo por CLI se puede aplicar una sola vez a cada cuenta y solo en modo demo.
 
@@ -26,3 +26,13 @@ Desde `/admin/usuarios`, buscá por nombre, email o ID y filtrá por rol/estado.
 - ADMIN gestiona clientes y revendedores; solo SUPER_ADMIN puede gestionar cuentas administrativas y otorgar esos roles. No se permite bloquearse o cambiar el propio rol, y se conserva un superadministrador activo. No existe eliminación de usuarios que borre su historial financiero.
 
 Los controles se verifican en el servidor, independientemente de los botones visibles. La migración `20261106180000_user_balance_management` añade auditoría e historial sin modificar saldos existentes.
+
+## Pedidos y conciliación
+
+En `/admin/pedidos` podés filtrar pedidos, consultar evidencia de envío, estado, cargo del proveedor y costo convertido. “Procesar pendientes y actualizar” ejecuta un lote; no reenvía altas inciertas.
+
+Ante un envío en revisión, verificá primero el panel del proveedor. Si existe, vinculá su ID; si comprobaste que no existe, confirmá esa conclusión para liberar la reserva. Debés indicar un motivo y confirmar la verificación. Las operaciones de cancelación/reposición inciertas tienen una conciliación equivalente.
+
+Los reintegros se registran desde el detalle de un pedido capturado con resultado parcial, cancelado, fallido o en revisión. Confirmá el importe reconocido por el proveedor antes de acreditar. No superan el precio pendiente de devolver y quedan auditados. Una solicitud de cancelación no acredita dinero automáticamente.
+
+El seguimiento funciona con el panel abierto. Para ejecución sin usuarios conectados, configurar el cron/worker indicado en `DEPLOYMENT.md`; el cron incluido para Hobby es diario y requiere `CRON_SECRET` en Vercel.
