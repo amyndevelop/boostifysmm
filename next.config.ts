@@ -1,5 +1,10 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
+ // Prisma's JS engine loads its compiler WASM dynamically. Include the asset
+ // explicitly so Vercel's serverless functions retain it after file tracing.
+ outputFileTracingIncludes: {
+   '/*': ['./node_modules/.prisma/client/query_compiler_bg.*'],
+ },
  experimental: { serverActions: { bodySizeLimit: '3mb' } },
  async headers() { return [{ source: '/:path*', headers: [
  { key: 'X-Content-Type-Options', value:'nosniff' },
