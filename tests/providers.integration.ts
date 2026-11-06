@@ -49,10 +49,16 @@ test('varios proveedores persisten credenciales y catálogos aislados',async t =
   assert.equal((await db.provider.findUniqueOrThrow({where:{id:a.id}})).connectionStatus,'ERROR');
  });
  await t.test('importa catálogos grandes en varios lotes sin duplicar servicios',async()=>{
-  const transport:typeof fetch=async(_,init)=>Response.json((init!.body as URLSearchParams).get('action')==='balance'?{balance:'50',currency:'USD'}:Array.from({length:501},(_,i)=>({service:i+1,name:`Servicio ${i+1}`,category:'Catálogo amplio',type:'Default',rate:'0.90',min:'50',max:'10000',refill:true,cancel:false})));
+  const transport:typeof fetch=async(_,init)=>Response.json((init!.body as URLSearchParams).get('action')==='balance'?{balance:'50',currency:'USD'}:Array.from({length:501},(_,i)=>({service:i+1,name:`Servicio ${i+1}`,category:'Catálogo amplio',type:'Default',rate:i%2?'0.90':0.9,min:i%2?'50':50,max:10000,refill:i%3?true:undefined,cancel:0})));
   await readProvider(admin.id,b.id,'services',transport);
   assert.equal(await db.providerService.count({where:{providerId:b.id,available:true}}),501);
   assert.equal(await db.providerService.count({where:{providerId:a.id}}),1);
+ });
+ await t.test('un error del listado conserva conexión y catálogo anterior',async()=>{
+  const transport:typeof fetch=async(_,init)=>Response.json((init!.body as URLSearchParams).get('action')==='balance'?{balance:'50',currency:'USD'}:[{service:1,name:'Test',type:'Default',rate:'private-invalid-rate',min:50,max:10000}]);
+  await assert.rejects(readProvider(admin.id,b.id,'services',transport),e=>e instanceof Error&&e.message.includes('SERVICES_FORMAT')&&!e.message.includes('private-invalid-rate'));
+  assert.equal((await db.provider.findUniqueOrThrow({where:{id:b.id}})).connectionStatus,'CONNECTED');
+  assert.equal(await db.providerService.count({where:{providerId:b.id,available:true}}),501);
  });
  await db.$disconnect();
 });

@@ -5,8 +5,8 @@ Ejecutada en el entorno cloud el 6 de noviembre de 2026, con Node 24.22.1, Next 
 - Instalación congelada `npm ci`: pasó; generación Prisma con adaptador: pasó.
 - TypeScript estricto y ESLint: pasaron.
 - Build de producción de Next: pasó.
-- Dominio y contrato SMMTAKE: 24 casos ejecutados y aprobados con el runner Node. No hubo llamadas externas en estas pruebas.
-- PostgreSQL: 21 escenarios más sus tres pruebas contenedoras (24 resultados aprobados). Se verificaron cantidades manuales, invalidaciones, concurrencia, idempotencia, precios históricos, acreditación única, permisos, ledger inmutable y recuperación del worker.
+- Dominio y contrato SMMTAKE: 28 casos ejecutados y aprobados con el runner Node. No hubo llamadas externas en estas pruebas.
+- PostgreSQL: 22 escenarios más sus tres pruebas contenedoras (25 resultados aprobados). Se verificaron cantidades manuales, invalidaciones, concurrencia, idempotencia, precios históricos, acreditación única, permisos, ledger inmutable y recuperación del worker.
 - Playwright con Chromium: 3 recorridos E2E aprobados en producción y en desarrollo. Registro, login/logout, pedido de 350 unidades por ARS 1.750, ticket persistido, acceso administrativo denegado al cliente, cookies HttpOnly/SameSite y vista de 390 px sin overflow horizontal. En desarrollo se verificó además que no hubiera errores de página JavaScript.
 - Arranque PostgreSQL y migraciones repetidos sin duplicar estado: pasaron. Worker demo procesó pedidos a COMPLETED y registró liquidación única.
 - Multi proveedor: creación y edición desde el sistema, conservación/reemplazo de claves, cifrado autenticado, permisos y catálogos separados con IDs externos coincidentes: aprobados. Las claves en las pruebas son ficticias.
@@ -21,3 +21,7 @@ Migración `20261106170000_catalog_management` aplicada y repetida sin cambios d
 Comprobaciones aprobadas: permisos del servidor; categorías ocultas y eliminación protegida; publicación selectiva; edición de precio/categoría sin alterar pedidos previos; conversión USD → ARS; conservación del costo nativo manual; actualización de costo sin modificar precio comercial; ocultamiento de orígenes ausentes; importación de 501 servicios en lotes; publicación, edición consecutiva y ocultamiento desde Chromium; costo privado ausente en la vista del cliente; pantalla móvil de 390 px sin desbordamiento.
 
 Las nuevas rutas administrativas se verifican con `scripts/verify-deployment.mjs` para incluir el compilador WASM de Prisma en Vercel. El envío real sigue deshabilitado y el backend rechaza esos pedidos antes de reservar fondos. No se realizaron llamadas ni compras reales en las pruebas.
+
+## Compatibilidad del listado del proveedor
+
+Se verificó importación con límites numéricos y textuales, tarifas numéricas y decimales en texto y capacidades opcionales/0/1. Las capacidades ausentes se conservan como no confirmadas (false); se rechazan precios o límites inválidos sin alterar el catálogo anterior. Los errores de HTTP, timeout, formato y base de datos tienen códigos y referencias seguros sin imprimir respuestas o claves. Una consulta de saldo exitosa mantiene la conexión verificada aunque falle el listado. La conexión con la credencial de producción almacenada en Vercel sigue requiriendo la comprobación del usuario después del despliegue.

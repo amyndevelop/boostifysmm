@@ -4,6 +4,7 @@ import { db } from '../db';
 import { encryptProviderKey, decryptProviderKey } from './secrets';
 import { validateProviderEndpoint } from './endpoint';
 import { convertedCost } from '../catalog';
+import { reportProviderFailure, type ProviderStage } from './errors';
 import { SmmtakeAdapter } from './smmtake';
 export const providerConfigSchema = z.object({
  id: z.string().max(100).optional(),
@@ -43,9 +44,14 @@ export async function readProvider(actorId: string, id: string, operation: 'bala
  const provider = await db.provider.findUnique({where:{id}});
  if (!provider || !['SMMTAKE','SMM_V2'].includes(provider.kind) || !provider.endpoint || !provider.encryptedKey) throw new Error('Configurá primero la URL y la clave API del proveedor.');
  const adapter = new SmmtakeAdapter(decryptProviderKey(provider.encryptedKey,id),transport ?? fetch,false,provider.endpoint);
+ let stage:ProviderStage='BALANCE';
+ let verifiedBalance:{balance:string;currency:string}|undefined;
  try {
   const balance = await adapter.getBalance();
+  verifiedBalance=balance;
+  stage='SERVICES';
   const services = operation === 'services' ? await adapter.getServices() : [];
+  stage='DATABASE';
   await db.$transaction(async tx => {
     // Serialize configuration edits/imports and avoid overwriting a newer credential's state.
     await tx.$queryRaw`SELECT id FROM "Provider" WHERE id = ${id} FOR UPDATE`;
@@ -75,8 +81,11 @@ export async function readProvider(actorId: string, id: string, operation: 'bala
     await tx.auditLog.create({data:{actorId,action:operation === 'services' ? 'IMPORT_PROVIDER_SERVICES' : 'TEST_PROVIDER_CONNECTION',reference:id}});
   },{timeout:60000});
   return operation === 'balance' ? `Conexión verificada. Saldo: ${balance.balance} ${balance.currency}.` : `${services.length} servicios importados y ocultos. Los precios comerciales se conservaron.`;
- } catch {
-  await db.provider.updateMany({where:{id,version:provider.version},data:{connectionStatus:'ERROR',lastCheckedAt:new Date()}});
-  throw new Error('No pudimos completar la consulta. Revisá URL, clave, compatibilidad de la API y acceso de red; luego probá nuevamente.');
+ } catch(error) {
+  const message=reportProviderFailure(error,stage);
+  // An import/save failure does not invalidate a successful balance request.
+  // Preserve the original diagnostic if recording connection metadata also fails.
+  await db.provider.updateMany({where:{id,version:provider.version},data:{connectionStatus:verifiedBalance?'CONNECTED':'ERROR',lastCheckedAt:new Date(),...(verifiedBalance?{balance:verifiedBalance.balance,currency:verifiedBalance.currency}:{})}}).catch(()=>{});
+  throw new Error(message);
  }
 }
