@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "client"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  CUSTOMER
+  RESELLER
+}
+enum OrderStatus {
+  PENDING
+  SUBMITTING
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  CANCELLED
+  FAILED
+  REVIEW_REQUIRED
+}
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  passwordHash String
+  role Role @default(CUSTOMER)
+  blocked Boolean @default(false)
+  theme String @default("light")
+  createdAt DateTime @default(now())
+  sessions Session[]
+  wallet Wallet?
+  orders Order[]
+  deposits DepositRequest[]
+  tickets SupportTicket[]
+  notifications Notification[]
+}
+model Session {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  @@index([userId])
+  @@index([expiresAt])
+}
+model Provider {
+  id String @id @default(cuid())
+  name String
+  kind String @default("UNCONFIGURED")
+  endpoint String?
+  encryptedKey String?
+  currency String @default("ARS")
+  active Boolean @default(false)
+  lastSyncAt DateTime?
+  lastCheckedAt DateTime?
+  connectionStatus String @default("UNTESTED")
+  balance Decimal? @db.Decimal(18, 6)
+  version Int @default(1)
+  services Service[]
+}
+model Service {
+  id String @id @default(cuid())
+  name String
+  description String
+  network String
+  category String
+  externalId String
+  originalName String
+  providerId String
+  provider Provider @relation(fields: [providerId], references: [id])
+  rate Decimal @db.Decimal(18, 2)
+  cost Decimal @db.Decimal(18, 4)
+  currency String @default("ARS")
+  min Int
+  max Int
+  active Boolean @default(false)
+  linkType String @default("profile")
+  allowedHosts String[]
+  orders Order[]
+  @@unique([providerId, externalId])
+  @@index([active, network])
+}
+model Wallet {
+  id String @id @default(cuid())
+  userId String @unique
+  user User @relation(fields: [userId], references: [id])
+  available Decimal @default(0) @db.Decimal(18, 2)
+  reserved Decimal @default(0) @db.Decimal(18, 2)
+  currency String @default("ARS")
+  transactions WalletTransaction[]
+}
+model WalletTransaction {
+  id String @id @default(cuid())
+  walletId String
+  wallet Wallet @relation(fields: [walletId], references: [id])
+  key String @unique
+  type String
+  amount Decimal @db.Decimal(18, 2)
+  reservedDelta Decimal @default(0) @db.Decimal(18, 2)
+  reference String
+  createdAt DateTime @default(now())
+  @@index([walletId, createdAt])
+}
+model Order {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  serviceId String
+  service Service @relation(fields: [serviceId], references: [id])
+  idempotencyKey String
+  fingerprint String
+  quantity Int
+  link String
+  price Decimal @db.Decimal(18, 2)
+  rateSnapshot Decimal @db.Decimal(18, 2)
+  costSnapshot Decimal @db.Decimal(18, 4)
+  serviceName String
+  network String
+  providerSnapshot String
+  externalServiceId String
+  currency String
+  externalId String?
+  status OrderStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events OrderEvent[]
+  job Job?
+  @@unique([userId, idempotencyKey])
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+model OrderEvent {
+  id String @id @default(cuid())
+  orderId String
+  order Order @relation(fields: [orderId], references: [id])
+  status OrderStatus
+  message String
+  createdAt DateTime @default(now())
+}
+model Job {
+  id String @id @default(cuid())
+  orderId String @unique
+  order Order @relation(fields: [orderId], references: [id])
+  state String @default("PENDING")
+  claimedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([state, createdAt])
+}
+model DepositRequest {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  amount Decimal @db.Decimal(18, 2)
+  reference String
+  receipt Bytes
+  mimeType String
+  status String @default("PENDING")
+  reviewedBy String?
+  createdAt DateTime @default(now())
+  @@index([status, createdAt])
+}
+model SupportTicket {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  subject String
+  category String
+  orderId String?
+  status String @default("OPEN")
+  createdAt DateTime @default(now())
+  messages TicketMessage[]
+  @@index([userId, createdAt])
+}
+model TicketMessage {
+  id String @id @default(cuid())
+  ticketId String
+  ticket SupportTicket @relation(fields: [ticketId], references: [id])
+  authorId String
+  body String
+  createdAt DateTime @default(now())
+}
+model Notification {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  message String
+  read Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+model AuditLog {
+  id String @id @default(cuid())
+  actorId String
+  action String
+  reference String
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+model AppSetting {
+  key String @id
+  value String
+}
+model RateLimit {
+  key String @id
+  count Int @default(1)
+  expiresAt DateTime
+}
+
+model ProviderService {
+  id String @id @default(cuid())
+  providerId String
+  externalId String
+  name String
+  category String
+  type String
+  rate Decimal @db.Decimal(18, 6)
+  currency String
+  min Int
+  max Int
+  refill Boolean
+  cancel Boolean
+  importedAt DateTime @default(now())
+  @@unique([providerId, externalId])
+}

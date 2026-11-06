@@ -1,0 +1,1 @@
+export default function Loading() { return <main className="legal" aria-busy="true" aria-label="Cargando tu espacio"><span className="pill">BOOSTIFY</span><h1>Estamos preparando tu espacio…</h1><div className="card padded"><p>Un momento, por favor.</p></div></main>; }

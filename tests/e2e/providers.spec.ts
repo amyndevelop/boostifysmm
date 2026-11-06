@@ -1,0 +1,42 @@
+import { test, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { db } from '../../src/lib/db';
+import { decryptProviderKey } from '../../src/lib/providers/secrets';
+test('administrador carga y edita varias APIs sin revelar sus claves',async ({page}) => {
+ const email = `admin-provider-${randomUUID()}@example.invalid`;
+ await page.goto('/registro');
+ await page.getByLabel('Tu nombre').fill('Admin Proveedores');
+ await page.getByLabel('Email',{exact:true}).fill(email);
+ await page.getByLabel('Contraseña',{exact:true}).fill(randomUUID()+'Aa!');
+ await page.getByRole('checkbox').check();
+ await page.getByRole('button',{name:'Crear mi cuenta'}).click();
+ await expect(page.getByRole('heading',{name:/¡Hola, Admin/})).toBeVisible();
+ await db.user.update({where:{email},data:{role:'ADMIN'}});
+ await page.goto('/admin/proveedores');
+ const suffix = randomUUID().slice(0,8);
+ const keyA = `fake-key-a-${randomUUID()}`; const keyB = `fake-key-b-${randomUUID()}`;
+ const nameA = `Proveedor A ${suffix}`; const nameB = `Proveedor B ${suffix}`;
+ const create = page.getByRole('region',{name:'Nuevo proveedor',exact:true});
+ for (const [name,key,endpoint] of [[nameA,keyA,'https://provider-a.com/api/v2'],[nameB,keyB,'https://provider-b.com/api']]) {
+  await create.getByLabel('Nombre del proveedor').fill(name);
+  await create.getByLabel('Tipo de integración').selectOption('SMM_V2');
+  await create.getByLabel('URL de la API').fill(endpoint);
+  await create.getByLabel('Clave API',{exact:true}).fill(key);
+  await create.getByRole('button',{name:'Guardar nuevo proveedor'}).click();
+  await expect(page.getByRole('region',{name:`Proveedor ${name}`,exact:true})).toBeVisible();
+ }
+ await page.reload();
+ const providerA = page.getByRole('region',{name:`Proveedor ${nameA}`,exact:true});
+ await expect(providerA.getByLabel('Reemplazar clave API')).toHaveValue('');
+ await providerA.getByLabel('Nombre del proveedor').fill(`${nameA} editado`);
+ await providerA.getByRole('button',{name:'Guardar cambios'}).click();
+ await expect(page.getByRole('region',{name:`Proveedor ${nameA} editado`,exact:true})).toBeVisible();
+ const stored = await db.provider.findFirstOrThrow({where:{name:`${nameA} editado`}});
+ expect(stored.encryptedKey).not.toEqual(keyA);
+ expect(decryptProviderKey(stored.encryptedKey!,stored.id)).toEqual(keyA);
+ const html = await page.content(); expect(html).not.toContain(keyA); expect(html).not.toContain(keyB); expect(html).not.toContain(stored.encryptedKey!);
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+ await db.provider.deleteMany({where:{name:{in:[nameA,`${nameA} editado`,nameB]}}});
+ await db.$disconnect();
+});
