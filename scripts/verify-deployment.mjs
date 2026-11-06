@@ -11,4 +11,4 @@ for (const route of ['registro','login','admin','admin/proveedores','admin/servi
 }
 console.log('Prisma deployment assets verified.');
 
-for(const route of ['orders/sync','cron/orders','mercadopago/webhook','webhooks/mercadopago']){const path=`.next/server/app/api/${route}/route.js.nft.json`;const files=JSON.parse(readFileSync(path,'utf8')).files;if(!files.some(file=>file.endsWith('/.prisma/client/query_compiler_bg.wasm')))throw new Error(`Missing Prisma WASM for API ${route}`);}
+for(const route of ['orders/sync','cron/orders','mercadopago/webhook','webhooks/mercadopago','payments/checkout']){const path=`.next/server/app/api/${route}/route.js.nft.json`;const files=JSON.parse(readFileSync(path,'utf8')).files;if(!files.some(file=>file.endsWith('/.prisma/client/query_compiler_bg.wasm')))throw new Error(`Missing Prisma WASM for API ${route}`);}

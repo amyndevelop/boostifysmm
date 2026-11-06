@@ -50,3 +50,9 @@ El parámetro `data.id` debe aparecer una sola vez en la query de la notificaci�
 El Access Token se sigue cargando desde `/admin/recargas`; no se introduce una segunda fuente de credenciales de API. `.env.example` contiene únicamente un campo vacío para la firma. Añadir/modificar variables en Vercel requiere un nuevo despliegue. No se configuraron secretos de producción desde este trabajo.
 
 Los errores generan `BOOSTIFY_MERCADOPAGO_WEBHOOK` con referencia aleatoria, etapa, código, ID numérico de pago y estado HTTP remoto cuando existe. Nunca incluyen mensajes/stack de excepciones, cabeceras, payload, tokens, firmas, datos del pagador ni URLs de conexión. La acreditación conserva el pago externo, ledger inmutable y auditoría existentes; no necesita nuevas migraciones.
+
+## Inicio de checkout tras un despliegue
+
+El botón usa `POST /api/payments/checkout` con JSON, sesión HttpOnly, Origin autorizado y la misma clave de idempotencia al reintentar. No usa IDs generados de Server Actions: una pestaña de la versión anterior podía recibir `Failed to find Server Action` antes de llegar al servidor de pagos. Tras actualizar desde esa versión, recargar la página para obtener el nuevo cliente.
+
+El endpoint no crea cobros: crea o reutiliza una preferencia de checkout y conserva las comprobaciones de recarga y acreditación. Los errores del proveedor se registran como `BOOSTIFY_CHECKOUT_ERROR` con referencia, ID de recarga, código y estado HTTP, sin respuestas remotas ni credenciales. Una respuesta incierta conserva la recarga y no vuelve a crear la preferencia bajo la misma confirmación. Los fallos de sesión/configuración se muestran en el formulario; los fallos inesperados generan una referencia de soporte.

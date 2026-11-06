@@ -4,29 +4,30 @@ import {z} from 'zod';
 import {PaymentProcessingError} from './errors';
 import {db} from '../db';
 import {gateway,paymentConfig,parseTopUpAmount} from './settings';
+import {PaymentGatewayError} from './mercadopago';
 const keySchema=z.object({amount:z.string(),idempotencyKey:z.uuid()});
 export async function createTopUp(userId:string,input:unknown,transport?:typeof fetch){
- const data=keySchema.parse(input);const config=await paymentConfig();if(!config?.enabled)throw new Error('Mercado Pago todavía no está habilitado.');
- if(!process.env.MERCADOPAGO_WEBHOOK_SECRET?.trim())throw new Error('Mercado Pago todavía no tiene configurada la firma del webhook.');
- if(process.env.APP_MODE==='demo')throw new Error('El modo demo no permite iniciar pagos externos.');
+ const data=keySchema.parse(input);const config=await paymentConfig();if(!config?.enabled)throw new PaymentProcessingError('CHECKOUT_DISABLED',false,'Mercado Pago todavía no está habilitado.');
+ if(!process.env.MERCADOPAGO_WEBHOOK_SECRET?.trim())throw new PaymentProcessingError('WEBHOOK_SECRET_MISSING',true,'Mercado Pago todavía no tiene configurada la firma del webhook.');
+ if(process.env.APP_MODE==='demo')throw new PaymentProcessingError('DEMO_MODE',false,'El modo demo no permite iniciar pagos externos.');
  const amount=parseTopUpAmount(data.amount,'1.00');const origin=new URL(process.env.APP_URL??'');
- if(origin.protocol!=='https:'&&process.env.APP_MODE!=='test')throw new Error('Mercado Pago requiere configurar APP_URL con HTTPS.');
+ if(origin.protocol!=='https:'&&process.env.APP_MODE!=='test')throw new PaymentProcessingError('APP_URL_INVALID',true,'Mercado Pago requiere configurar APP_URL con HTTPS.');
  const {topUp,send}=await db.$transaction(async tx=>{
   await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(7731201)`;
   await tx.$queryRaw`SELECT id FROM "Wallet" WHERE "userId"=${userId} FOR UPDATE`;
-  const user=await tx.user.findUniqueOrThrow({where:{id:userId}});if(user.blocked)throw new Error('Cuenta bloqueada.');
+  const user=await tx.user.findUniqueOrThrow({where:{id:userId}});if(user.blocked)throw new PaymentProcessingError('ACCOUNT_BLOCKED',false,'Cuenta bloqueada.');
   const existing=await tx.topUp.findUnique({where:{userId_idempotencyKey:{userId,idempotencyKey:data.idempotencyKey}}});
-  if(existing){if(!existing.amount.eq(amount))throw new Error('Esta confirmación se usó para otro importe.');return {topUp:existing,send:false};}
-  const current=await tx.appSetting.findUnique({where:{key:'mercadoPago'}});if(!current||JSON.parse(current.value).version!==config.version)throw new Error('La configuración de pagos cambió. Actualizá la página.');
+  if(existing){if(!existing.amount.eq(amount))throw new PaymentProcessingError('IDEMPOTENCY_CONFLICT',false,'Esta confirmación se usó para otro importe.');return {topUp:existing,send:false};}
+  const current=await tx.appSetting.findUnique({where:{key:'mercadoPago'}});if(!current||JSON.parse(current.value).version!==config.version)throw new PaymentProcessingError('CONFIGURATION_CHANGED',false,'La configuración de pagos cambió. Actualizá la página.');
   const minimum=await tx.appSetting.findUnique({where:{key:'depositMinimum'}});parseTopUpAmount(amount.toFixed(2),minimum?.value??'1000.00');
   return {topUp:await tx.topUp.create({data:{id:randomUUID(),userId,amount,idempotencyKey:data.idempotencyKey,collectorId:config.collectorId,liveMode:config.liveMode}}),send:true};
  });
- if(!send){if(topUp.checkoutUrl)return topUp;throw new Error('La recarga está registrada pero aún no tiene un enlace confirmado. Revisá su estado o iniciá una nueva recarga.');}
+ if(!send){if(topUp.checkoutUrl)return topUp;throw new PaymentProcessingError('CHECKOUT_PENDING',true,'La recarga está registrada pero aún no tiene un enlace confirmado. Revisá su estado o iniciá una nueva recarga.');}
  try{
   const result=await gateway(config,transport).preference({items:[{id:topUp.id,title:'Recarga de saldo BOOSTIFY',quantity:1,currency_id:'ARS',unit_price:amount.toNumber()}],external_reference:topUp.id,metadata:{topup_id:topUp.id},back_urls:{success:`${origin.origin}/recargas/${topUp.id}`,pending:`${origin.origin}/recargas/${topUp.id}`,failure:`${origin.origin}/recargas/${topUp.id}`},auto_return:'approved',notification_url:`${origin.origin}/api/webhooks/mercadopago`,binary_mode:false,expires:true,expiration_date_to:new Date(Date.now()+24*3600000).toISOString()},topUp.id,config.liveMode);
   if(result.collectorId&&result.collectorId!==topUp.collectorId)throw new Error('La cuenta de cobro no coincide.');
   return await db.topUp.update({where:{id:topUp.id},data:{status:'PENDING',preferenceId:result.id,checkoutUrl:result.url}});
- }catch{await db.topUp.updateMany({where:{id:topUp.id,status:'CREATING'},data:{status:'CHECKOUT_UNCERTAIN'}});throw new Error('No pudimos confirmar el enlace de pago. No se acreditó saldo; revisá tus recargas antes de reintentar.');}
+ }catch(error){const reference=randomUUID();console.error('BOOSTIFY_CHECKOUT_ERROR',{reference,topUpId:topUp.id,code:error instanceof PaymentGatewayError?error.code:'CHECKOUT_PERSISTENCE_OR_CONFIGURATION',...(error instanceof PaymentGatewayError&&error.httpStatus?{httpStatus:error.httpStatus}:{})});await db.topUp.updateMany({where:{id:topUp.id,status:'CREATING'},data:{status:'CHECKOUT_UNCERTAIN'}});throw new PaymentProcessingError('CHECKOUT_UNCERTAIN',true,`No pudimos confirmar el enlace de pago. No se acreditó saldo; revisá tus recargas antes de reintentar. Referencia: ${reference}.`);}
 }
 export async function synchronizePayment(paymentId:string,options:{transport?:typeof fetch;expectedTopUpId?:string}={}){
  if(!/^\d{1,30}$/.test(paymentId))throw new Error('Identificador de pago inválido.');

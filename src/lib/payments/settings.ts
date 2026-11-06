@@ -3,12 +3,13 @@ import {Prisma} from '@prisma/client';
 import {z} from 'zod';
 import {db} from '../db';
 import {encryptProviderKey,decryptProviderKey} from '../providers/secrets';
+import {PaymentProcessingError} from './errors';
 import {MercadoPago} from './mercadopago';
 export const MAX_TOP_UP='10000000.00';
 const configSchema=z.object({version:z.string(),enabled:z.boolean(),collectorId:z.string(),liveMode:z.boolean(),token:z.string(),webhookSecret:z.string()});
 export async function paymentConfig(){const row=await db.appSetting.findUnique({where:{key:'mercadoPago'}});return row?configSchema.parse(JSON.parse(row.value)):null;}
 export async function depositMinimum(){const row=await db.appSetting.findUnique({where:{key:'depositMinimum'}});return row?.value??'1000.00';}
-export function parseTopUpAmount(input:unknown,minimum:string){const value=z.string().regex(/^\d{1,8}(\.\d{1,2})?$/,'Ingresá un importe en ARS con hasta dos decimales.').parse(input);const amount=new Prisma.Decimal(value);if(amount.lt(minimum)||amount.gt(MAX_TOP_UP))throw new Error(`El importe debe estar entre ARS ${minimum} y ARS ${MAX_TOP_UP}.`);return amount;}
+export function parseTopUpAmount(input:unknown,minimum:string){const value=z.string().regex(/^\d{1,8}(\.\d{1,2})?$/,'Ingresá un importe en ARS con hasta dos decimales.').parse(input);const amount=new Prisma.Decimal(value);if(amount.lt(minimum)||amount.gt(MAX_TOP_UP))throw new PaymentProcessingError('AMOUNT_OUT_OF_RANGE',false,`El importe debe estar entre ARS ${minimum} y ARS ${MAX_TOP_UP}.`);return amount;}
 export function gateway(config:NonNullable<Awaited<ReturnType<typeof paymentConfig>>>,transport?:typeof fetch){return new MercadoPago(decryptProviderKey(config.token,'mercadopago:access'),transport);}
 export function webhookSecret(config:NonNullable<Awaited<ReturnType<typeof paymentConfig>>>){return decryptProviderKey(config.webhookSecret,'mercadopago:webhook');}
 export async function publicPaymentSettings(){const [minimum,config]=await Promise.all([depositMinimum(),paymentConfig()]);return {minimum,enabled:Boolean(config?.enabled)&&Boolean(process.env.MERCADOPAGO_WEBHOOK_SECRET?.trim())&&process.env.APP_MODE!=='demo',testMode:config?!config.liveMode:false};}
