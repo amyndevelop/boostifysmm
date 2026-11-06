@@ -29,6 +29,9 @@ model User {
   passwordHash String
   role Role @default(CUSTOMER)
   blocked Boolean @default(false)
+  version Int @default(1)
+  balanceAdjustments WalletAdjustment[] @relation("AdjustmentUser")
+  adjustmentsMade WalletAdjustment[] @relation("AdjustmentActor")
   theme String @default("light")
   createdAt DateTime @default(now())
   sessions Session[]
@@ -102,8 +105,10 @@ model Wallet {
   reserved Decimal @default(0) @db.Decimal(18, 2)
   currency String @default("ARS")
   transactions WalletTransaction[]
+  adjustments WalletAdjustment[]
 }
 model WalletTransaction {
+  adjustment WalletAdjustment?
   id String @id @default(cuid())
   walletId String
   wallet Wallet @relation(fields: [walletId], references: [id])
@@ -205,6 +210,7 @@ model Notification {
   createdAt DateTime @default(now())
 }
 model AuditLog {
+  metadata Json?
   id String @id @default(cuid())
   actorId String
   action String
@@ -253,4 +259,26 @@ model ServiceCategory {
   createdAt DateTime @default(now())
   @@unique([network, name])
   @@index([active, sortOrder])
+}
+
+model WalletAdjustment {
+  id String @id @default(cuid())
+  userId String
+  user User @relation("AdjustmentUser", fields: [userId], references: [id])
+  actorId String
+  actor User @relation("AdjustmentActor", fields: [actorId], references: [id])
+  walletId String
+  wallet Wallet @relation(fields: [walletId], references: [id])
+  transactionId String @unique
+  transaction WalletTransaction @relation(fields: [transactionId], references: [id])
+  idempotencyKey String
+  fingerprint String
+  direction String
+  amount Decimal @db.Decimal(18,2)
+  balanceBefore Decimal @db.Decimal(18,2)
+  balanceAfter Decimal @db.Decimal(18,2)
+  reason String
+  createdAt DateTime @default(now())
+  @@unique([actorId, idempotencyKey])
+  @@index([userId, createdAt])
 }

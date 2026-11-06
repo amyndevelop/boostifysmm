@@ -4,7 +4,7 @@ La entrega implementa un flujo vertical demo completo y partes de administració
 
 - Integración real: credencial y conectividad SMMTAKE no verificadas. Ya hay publicación selectiva y conversión manual por servicio. Faltan validación real y envío real del worker, polling, costo real, conciliación operativa y políticas de reintegro/refill. No habilitar compras hasta completar y probar estos pasos.
 - Recuperación de contraseña por email y verificación de dirección: falta configurar un proveedor transaccional y plantillas. No se envían emails. La interfaz identifica el contacto administrativo como mecanismo temporal.
-- Gestión ampliada de usuarios: bloqueo/desbloqueo, delegación granular de permisos y administración segura de roles; roles iniciales y autorización ya existen, pero aún no tienen consola de gestión completa.
+- Usuarios: consola de alta/edición/bloqueo/roles y cargas/descuentos auditados ya implementada. Quedan permisos personalizados por acción y flujos de recuperación por email/MFA administrativa.
 - Revendedores: faltan tarifas específicas/descuentos, categorías comerciales y gestión administrativa. La API pública es un módulo futuro, aún no implementado.
 - Catálogo: quedan pendientes formularios específicos para Custom Comments, Subscriptions y otros tipos del proveedor, cálculo automático de tipo de cambio y verificación semántica por tipo de enlace/red. Categorías, redes por categoría, editor comercial, precios propios, márgenes y publicación individual ya están implementados.
 - Configuración ampliada: marca, logo, registro habilitable, mínimo de depósito y política de redondeo configurables; actualmente moneda ARS, mínimo $1.000 y HALF_UP son explícitos y fijos.
