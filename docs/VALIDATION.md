@@ -49,3 +49,9 @@ Migración `20261106210000_mercadopago` aplicada en la base local y en la base d
 Siete recorridos de Chromium aprobados (seis existentes y el nuevo de pagos): se guardó el mínimo ARS 1.250,50, se comprobó su presentación al cliente y la vista móvil sin desbordamiento. Se comprobó que los detalles de recargas no autorizadas devuelvan la pantalla 404. Build y verificación de WASM para las nuevas rutas, TypeScript y lint aprobados. La prueba de pagos pasó después de corregir la persistencia del aviso de guardado y ajustar su expectativa al texto 404 en español.
 
 Las peticiones de Mercado Pago usaron transporte simulado. No se crearon cobros reales, no se conectó una cuenta de producción ni se configuró su Webhook. La habilitación requiere cargar Access Token y firma secreta desde Recargas y pagos y configurar el evento payment en Mercado Pago. Ver `MERCADOPAGO.md`.
+
+## Webhook de producción `/api/webhooks/mercadopago`
+
+Firma obligatoria desde `MERCADOPAGO_WEBHOOK_SECRET`, sin fallback a la credencial guardada. La ruta anterior comparte el handler sin redirección. Unitarias: 40 aprobadas, incluidas rutas exportadas, variables ausentes, IDs repetidos, firma inválida, ID firmado frente a cuerpo manipulado, eventos ajenos, confirmaciones 200 y errores reintentables 503 con logs sin credenciales. Integración completa: 67 resultados aprobados. La suite de pagos ampliada pasó después con 18 resultados e incluye un fallo real de PostgreSQL que revierte pago y ledger, devuelve 503 y conserva el saldo. Las notificaciones firmadas concurrentes acreditan una sola vez.
+
+Build Next, TypeScript, lint y trazas Prisma de ambos endpoints aprobados. HTTP contra el build local: GET devuelve 405 y POST sin secreto devuelve 503 con no-store y Retry-After, sin redirección. La pantalla de configuración conserva el mínimo y muestra solo el estado de la variable, sin su valor. No se utilizaron credenciales reales ni se configuraron variables de Vercel.

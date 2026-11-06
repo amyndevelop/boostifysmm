@@ -1,12 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {randomBytes,randomUUID} from 'node:crypto';
+import {randomBytes,randomUUID,createHmac} from 'node:crypto';
+import {handleMercadoPagoWebhook} from '../src/lib/payments/webhook';
 import {db} from '../src/lib/db';
 import {savePaymentSettings,paymentConfig,depositMinimum} from '../src/lib/payments/settings';
 import {createTopUp,synchronizePayment,refreshTopUp} from '../src/lib/payments/topups';
 
 test('recargas Mercado Pago con API simulada y saldos reales de la base de pruebas',async t=>{
- assert.ok(new URL(process.env.DATABASE_URL!).pathname.endsWith('_test'));process.env.APP_MODE='test';process.env.APP_URL='https://boostify.example.invalid';process.env.PROVIDER_ENCRYPTION_KEY=randomBytes(32).toString('hex');
+ assert.ok(new URL(process.env.DATABASE_URL!).pathname.endsWith('_test'));process.env.APP_MODE='test';process.env.MERCADOPAGO_WEBHOOK_SECRET='integration-webhook-secret-123456789';process.env.APP_URL='https://boostify.example.invalid';process.env.PROVIDER_ENCRYPTION_KEY=randomBytes(32).toString('hex');
  // These settings are test-database fixtures; never access production credentials.
  await db.appSetting.deleteMany({where:{key:{in:['mercadoPago','depositMinimum']}}});
  const admin=await db.user.create({data:{name:'MP test admin',email:`${randomUUID()}@example.invalid`,passwordHash:'test',role:'SUPER_ADMIN'}});
@@ -15,7 +16,7 @@ test('recargas Mercado Pago con API simulada y saldos reales de la base de prueb
  const transport:typeof fetch=async(url,init)=>{
   assert.equal(new Headers(init?.headers).get('authorization'),'Bearer fake-access-token');const path=new URL(String(url));assert.equal(path.hostname,'api.mercadopago.com');
   if(path.pathname==='/users/me')return Response.json({id:777,site_id:'MLA'});
-  if(path.pathname==='/checkout/preferences'){calls++;const body=JSON.parse(String(init?.body));assert.equal(body.items[0].currency_id,'ARS');assert.equal(body.notification_url,'https://boostify.example.invalid/api/mercadopago/webhook');assert.equal(body.back_urls.success,`https://boostify.example.invalid/recargas/${body.external_reference}`);const id=`pref-${++seq}`;preferences.set(body.external_reference,id);return Response.json({id,collector_id:777,init_point:`https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=${id}`,sandbox_init_point:`https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=${id}`});}
+  if(path.pathname==='/checkout/preferences'){calls++;const body=JSON.parse(String(init?.body));assert.equal(body.items[0].currency_id,'ARS');assert.equal(body.notification_url,'https://boostify.example.invalid/api/webhooks/mercadopago');assert.equal(body.back_urls.success,`https://boostify.example.invalid/recargas/${body.external_reference}`);const id=`pref-${++seq}`;preferences.set(body.external_reference,id);return Response.json({id,collector_id:777,init_point:`https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=${id}`,sandbox_init_point:`https://sandbox.mercadopago.com.ar/checkout/v1/redirect?pref_id=${id}`});}
   if(path.pathname==='/v1/payments/search')return Response.json({results:[...payments.values()].filter(p=>p.external_reference===path.searchParams.get('external_reference')).reverse().slice(0,3)});
   if(path.pathname.startsWith('/v1/payments/'))return Response.json(payments.get(path.pathname.split('/').at(-1)!)??{}, {status:payments.has(path.pathname.split('/').at(-1)!)?200:404});
   if(path.pathname.startsWith('/merchant_orders/')){const id=path.pathname.split('/').at(-1)!;const payment=payments.get(id)!;return Response.json({id,preference_id:preferences.get(String(payment.external_reference)),payments:[{id}]});}
@@ -36,6 +37,29 @@ test('recargas Mercado Pago con API simulada y saldos reales de la base de prueb
  await t.test('devolución posterior se registra para revisión sin repetir créditos',async()=>{const top=await create();const id=payment(top.id);await synchronizePayment(id,{transport});const approved={...payments.get(id)!};payments.set(id,{...approved,status:'refunded',transaction_amount_refunded:3000.5,date_last_updated:new Date(Date.now()+1000).toISOString()});await synchronizePayment(id,{transport});assert.equal((await db.topUp.findUniqueOrThrow({where:{id:top.id}})).status,'REVIEW_REQUIRED');payments.set(id,approved);await synchronizePayment(id,{transport});assert.equal((await db.mercadoPagoPayment.findUniqueOrThrow({where:{id}})).status,'refunded');assert.equal(await db.walletTransaction.count({where:{key:`mp:${id}`}}),1);});
  await t.test('no consulta recargas ajenas ni vincula un pago de otro usuario',async()=>{const top=await create();await assert.rejects(()=>refreshTopUp(admin.id,top.id,undefined,transport));const other=await create();const id=payment(other.id);await assert.rejects(()=>refreshTopUp(user.id,top.id,id,transport));});
  await t.test('recupera un pago aprobado por referencia aunque no llegue la notificación',async()=>{const top=await create();const id=payment(top.id);await refreshTopUp(user.id,top.id,undefined,transport);assert.equal((await db.topUp.findUniqueOrThrow({where:{id:top.id}})).creditedPaymentId,id);});
+ await t.test('webhook firmado acredita una vez con reintentos concurrentes y confirma 200',async()=>{
+  const top=await create();const id=payment(top.id);const secret='integration-webhook-secret';
+  const notification=()=>{const ts=String(Math.floor(Date.now()/1000));const requestId=randomUUID();const digest=createHmac('sha256',secret).update(`id:${id};request-id:${requestId};ts:${ts};`).digest('hex');return new Request(`https://boostify.example.invalid/api/webhooks/mercadopago?data.id=${id}&type=payment`,{method:'POST',headers:{'x-signature':`ts=${ts},v1=${digest}`,'x-request-id':requestId},body:JSON.stringify({data:{id},status:'pending',amount:1})});};
+  const dependencies={secret:()=>secret,synchronize:(value:string)=>synchronizePayment(value,{transport})};
+  const before=(await db.wallet.findUniqueOrThrow({where:{userId:user.id}})).available;
+  const responses=await Promise.all([handleMercadoPagoWebhook(notification(),dependencies),handleMercadoPagoWebhook(notification(),dependencies),handleMercadoPagoWebhook(notification(),dependencies)]);
+  assert.ok(responses.every(r=>r.status===200));assert.equal((await db.wallet.findUniqueOrThrow({where:{userId:user.id}})).available.minus(before).toFixed(2),'3000.50');assert.equal(await db.walletTransaction.count({where:{key:`mp:${id}`}}),1);
+  const external=await db.mercadoPagoPayment.findUniqueOrThrow({where:{id}});assert.equal(external.topUpId,top.id);assert.equal(external.status,'approved');
+ });
+ await t.test('webhook de pago cancelado o sin referencia válida confirma recepción sin acreditar',async()=>{
+  const before=(await db.wallet.findUniqueOrThrow({where:{userId:user.id}})).available.toFixed(2);
+  const top=await create();const cancelled=payment(top.id,{status:'cancelled'});await synchronizePayment(cancelled,{transport});assert.equal((await db.topUp.findUniqueOrThrow({where:{id:top.id}})).creditedAt,null);
+  for(const ref of [null,randomUUID()]){const id=payment(top.id,{external_reference:ref});assert.deepEqual(await synchronizePayment(id,{transport}),{ignored:true});assert.equal(await db.walletTransaction.count({where:{key:`mp:${id}`}}),0);}
+  assert.equal((await db.wallet.findUniqueOrThrow({where:{userId:user.id}})).available.toFixed(2),before);
+ });
+ await t.test('un error de PostgreSQL revierte registro y movimiento; webhook devuelve 503',async child=>{
+  child.mock.method(console,'error',()=>{});
+  const maximum='9999999999999999.99';const overflowUser=await db.user.create({data:{name:'Overflow test only',email:`${randomUUID()}@example.invalid`,passwordHash:'test',wallet:{create:{available:maximum}}}});
+  const top=await createTopUp(overflowUser.id,{amount:'3000.50',idempotencyKey:randomUUID()},transport);const id=payment(top.id);const secret='database-rollback-test-secret';const ts=String(Math.floor(Date.now()/1000));const requestId=randomUUID();const signature=createHmac('sha256',secret).update(`id:${id};request-id:${requestId};ts:${ts};`).digest('hex');
+  const request=new Request(`https://boostify.example.invalid/api/webhooks/mercadopago?data.id=${id}`,{method:'POST',headers:{'x-signature':`ts=${ts},v1=${signature}`,'x-request-id':requestId}});
+  const response=await handleMercadoPagoWebhook(request,{secret:()=>secret,synchronize:value=>synchronizePayment(value,{transport})});
+  assert.equal(response.status,503);assert.equal(await db.mercadoPagoPayment.count({where:{id}}),0);assert.equal(await db.walletTransaction.count({where:{key:`mp:${id}`}}),0);assert.equal((await db.topUp.findUniqueOrThrow({where:{id:top.id}})).creditedAt,null);assert.equal((await db.wallet.findUniqueOrThrow({where:{userId:overflowUser.id}})).available.toFixed(2),maximum);
+ });
  await t.test('desactivar pagos detiene nuevos checkouts pero admite notificaciones pendientes',async()=>{const top=await create();const id=payment(top.id);await savePaymentSettings(admin.id,await configInput({enabled:false}),transport);await assert.rejects(create);await synchronizePayment(id,{transport});assert.ok((await db.topUp.findUniqueOrThrow({where:{id:top.id}})).creditedAt);});
  await t.test('no permite cambiar cuenta ni modo después de registrar recargas',async()=>{const input=await configInput({liveMode:false});await assert.rejects(()=>savePaymentSettings(admin.id,input,transport),/No se puede cambiar/);});
  await t.test('pagos de prueba nunca generan saldo utilizable',async()=>{const top=await db.topUp.create({data:{userId:user.id,amount:'3000.50',collectorId:'777',liveMode:false,idempotencyKey:randomUUID(),preferenceId:`pref-sandbox-${randomUUID()}`,status:'PENDING'}});preferences.set(top.id,top.preferenceId!);const id=payment(top.id,{live_mode:false});const before=(await db.wallet.findUniqueOrThrow({where:{userId:user.id}})).available.toFixed(2);await synchronizePayment(id,{transport});assert.equal((await db.topUp.findUniqueOrThrow({where:{id:top.id}})).status,'TEST_APPROVED');assert.equal((await db.wallet.findUniqueOrThrow({where:{userId:user.id}})).available.toFixed(2),before);});

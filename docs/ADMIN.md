@@ -39,4 +39,4 @@ El seguimiento funciona con el panel abierto. Para ejecución sin usuarios conec
 
 ## Recargas y pagos
 
-El menú incluye `/admin/recargas`: mínimo editable para nuevas recargas de ambos métodos, credenciales cifradas de Mercado Pago, activación e historial. Solo SUPER_ADMIN cambia los cobros; ADMIN puede consultar recargas. Configurar el evento payment en Mercado Pago con el webhook público indicado por la pantalla. Ver [instrucciones](MERCADOPAGO.md). No se acredita al volver del checkout ni se suman pagos sandbox.
+El menú incluye `/admin/recargas`: mínimo editable para nuevas recargas de ambos métodos, Access Token cifrado de Mercado Pago, activación e historial. La firma se configura en Vercel como `MERCADOPAGO_WEBHOOK_SECRET`; el endpoint público es `/api/webhooks/mercadopago`. Solo SUPER_ADMIN cambia los cobros; ADMIN puede consultar recargas. Configurar el evento payment en Mercado Pago con el webhook público indicado por la pantalla. Ver [instrucciones](MERCADOPAGO.md). No se acredita al volver del checkout ni se suman pagos sandbox.
