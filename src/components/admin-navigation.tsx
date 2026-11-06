@@ -12,6 +12,7 @@ const sections = [
  {href:'/admin/servicios',label:'Servicios y precios',icon:Layers},
  {href:'/admin/categorias',label:'Categorías',icon:FolderTree},
  {href:'/admin/proveedores',label:'Proveedores y APIs',icon:Plug},
+ {href:'/admin/recargas',label:'Recargas y pagos',icon:Wallet},
  {href:'/admin#solicitudes',label:'Solicitudes de saldo',icon:Wallet},
  {href:'/admin#soporte',label:'Soporte',icon:MessagesSquare},
  {href:'/admin#banco',label:'Datos bancarios',icon:Landmark},

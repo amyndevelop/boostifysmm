@@ -38,6 +38,7 @@ model User {
   wallet Wallet?
   orders Order[]
   deposits DepositRequest[]
+  topUps TopUp[]
   tickets SupportTicket[]
   notifications Notification[]
 }
@@ -338,4 +339,36 @@ model OrderRefund {
   reason String
   idempotencyKey String @unique
   createdAt DateTime @default(now())
+}
+
+model TopUp {
+ id String @id @default(uuid())
+ userId String
+ user User @relation(fields: [userId], references: [id])
+ amount Decimal @db.Decimal(18,2)
+ idempotencyKey String
+ collectorId String
+ liveMode Boolean
+ status String @default("CREATING")
+ preferenceId String? @unique
+ checkoutUrl String?
+ creditedPaymentId String? @unique
+ creditedAt DateTime?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ payments MercadoPagoPayment[]
+ @@unique([userId,idempotencyKey])
+ @@index([status,createdAt])
+}
+model MercadoPagoPayment {
+ id String @id
+ topUpId String
+ topUp TopUp @relation(fields: [topUpId], references: [id])
+ status String
+ amount Decimal @db.Decimal(18,2)
+ refunded Decimal @default(0) @db.Decimal(18,2)
+ reviewReason String?
+ providerUpdatedAt DateTime
+ updatedAt DateTime @updatedAt
+ @@index([topUpId])
 }

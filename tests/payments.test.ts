@@ -1,0 +1,11 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createHmac} from 'node:crypto';
+import {MercadoPago,verifyWebhook} from '../src/lib/payments/mercadopago';
+import {parseTopUpAmount} from '../src/lib/payments/settings';
+const secret='fake-webhook-secret-no-real-credentials';const id='12345';const requestId='request-one';const ts=String(Math.floor(Date.now()/1000));const signature=`ts=${ts},v1=${createHmac('sha256',secret).update(`id:${id};request-id:${requestId};ts:${ts};`).digest('hex')}`;
+test('firma válida y timestamp reciente permiten verificar solo el ID firmado',()=>{assert.equal(verifyWebhook(secret,id,requestId,signature),true);assert.equal(verifyWebhook(secret,'999',requestId,signature),false);assert.equal(verifyWebhook(secret,id,'different',signature),false);assert.equal(verifyWebhook('wrong',id,requestId,signature),false);});
+test('rechaza firmas ausentes, manipuladas, antiguas y parámetros ambiguos',()=>{assert.equal(verifyWebhook(secret,id,requestId,null),false);assert.equal(verifyWebhook(secret,id,null,signature),false);assert.equal(verifyWebhook(secret,id,requestId,signature,Date.now()+11*60000),false);assert.equal(verifyWebhook(secret,id,requestId,`${signature},ts=${ts}`),false);assert.equal(verifyWebhook(secret,'https://attacker.invalid',requestId,signature),false);});
+test('mínimo configurable, centavos exactos y máximo para ambas formas de carga',()=>{assert.equal(parseTopUpAmount('2500.25','2500.25').toFixed(2),'2500.25');for(const value of ['2500.24','-1','0','2500.251','1e6','10000000.01'])assert.throws(()=>parseTopUpAmount(value,'2500.25'));});
+test('no sigue redirecciones ni muestra tokens/respuestas ante errores remotos',async()=>{const api=new MercadoPago('sensitive-token',async(_url,init)=>{assert.equal(init?.redirect,'error');assert.equal(init?.cache,'no-store');return Response.json({message:'sensitive-token'},{status:401});});await assert.rejects(()=>api.account(),e=>e instanceof Error&&!e.message.includes('sensitive-token'));});
+test('el enlace checkout debe pertenecer al dominio argentino de Mercado Pago',async()=>{const api=new MercadoPago('fake',async()=>Response.json({id:'pref',init_point:'https://attacker.invalid/checkout',sandbox_init_point:'https://sandbox.mercadopago.com.ar/checkout'}));await assert.rejects(()=>api.preference({},'key',true));});

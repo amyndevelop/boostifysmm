@@ -36,3 +36,7 @@ Ante un envío en revisión, verificá primero el panel del proveedor. Si existe
 Los reintegros se registran desde el detalle de un pedido capturado con resultado parcial, cancelado, fallido o en revisión. Confirmá el importe reconocido por el proveedor antes de acreditar. No superan el precio pendiente de devolver y quedan auditados. Una solicitud de cancelación no acredita dinero automáticamente.
 
 El seguimiento funciona con el panel abierto. Para ejecución sin usuarios conectados, configurar el cron/worker indicado en `DEPLOYMENT.md`; el cron incluido para Hobby es diario y requiere `CRON_SECRET` en Vercel.
+
+## Recargas y pagos
+
+El menú incluye `/admin/recargas`: mínimo editable para nuevas recargas de ambos métodos, credenciales cifradas de Mercado Pago, activación e historial. Solo SUPER_ADMIN cambia los cobros; ADMIN puede consultar recargas. Configurar el evento payment en Mercado Pago con el webhook público indicado por la pantalla. Ver [instrucciones](MERCADOPAGO.md). No se acredita al volver del checkout ni se suman pagos sandbox.

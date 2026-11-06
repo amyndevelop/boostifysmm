@@ -10,7 +10,7 @@ if (!found.rowCount) await client.query('CREATE DATABASE boostify_test');
 await client.end();
 url.pathname = '/boostify_test';
 const env = { ...process.env, DATABASE_URL: url.toString(), APP_MODE: 'demo' };
-for (const [cmd,args] of [['node',['scripts/migrate.mjs']],['node',['--import','tsx','--test','--test-concurrency=1','tests/flows.integration.ts','tests/providers.integration.ts','tests/catalog.integration.ts','tests/users.integration.ts','tests/live-orders.integration.ts']]]) {
+for (const [cmd,args] of [['node',['scripts/migrate.mjs']],['node',['--import','tsx','--test','--test-concurrency=1','tests/flows.integration.ts','tests/providers.integration.ts','tests/catalog.integration.ts','tests/users.integration.ts','tests/live-orders.integration.ts','tests/payments.integration.ts']]]) {
  const run = spawnSync(cmd,args,{env,stdio:'inherit'});
  if (run.status !== 0) process.exit(run.status ?? 1);
 }

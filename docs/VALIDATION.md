@@ -41,3 +41,11 @@ Pruebas con transporte simulado, sin compras externas: envío concurrente único
 La programación de producción depende de los secretos y servicios del hosting; no se afirma haber configurado `CRON_SECRET` ni un worker externo. El cron incluido es diario, compatible con Hobby.
 
 Chromium: seis recorridos aprobados, incluidos reintegro administrativo confirmado, protección de sesión/origen del seguimiento, autenticación del cron y vista móvil sin desbordamiento.
+
+## Recargas automáticas con Mercado Pago
+
+Migración `20261106210000_mercadopago` aplicada en la base local y en la base de pruebas. No modifica saldos existentes. Unitarias: 33 casos aprobados; integración: 65 resultados aprobados. Los escenarios nuevos verifican firma y expiración, URL de checkout controlada, mínimo con centavos, permisos SUPER_ADMIN, cifrado, creación concurrente, pago pendiente/rechazado/aprobado, acreditación única bajo concurrencia, cuenta/moneda/importe/modo/preferencia, pagos adicionales, devolución y respuestas antiguas, aislamiento entre usuarios y recuperación por referencia sin webhook. Sandbox no acredita saldo utilizable.
+
+Siete recorridos de Chromium aprobados (seis existentes y el nuevo de pagos): se guardó el mínimo ARS 1.250,50, se comprobó su presentación al cliente y la vista móvil sin desbordamiento. Se comprobó que los detalles de recargas no autorizadas devuelvan la pantalla 404. Build y verificación de WASM para las nuevas rutas, TypeScript y lint aprobados. La prueba de pagos pasó después de corregir la persistencia del aviso de guardado y ajustar su expectativa al texto 404 en español.
+
+Las peticiones de Mercado Pago usaron transporte simulado. No se crearon cobros reales, no se conectó una cuenta de producción ni se configuró su Webhook. La habilitación requiere cargar Access Token y firma secreta desde Recargas y pagos y configurar el evento payment en Mercado Pago. Ver `MERCADOPAGO.md`.

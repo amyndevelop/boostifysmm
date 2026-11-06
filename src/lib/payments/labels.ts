@@ -1,0 +1,1 @@
+export const topUpLabels:Record<string,string>={CREATING:'Preparando enlace',CHECKOUT_UNCERTAIN:'Enlace sin confirmar',PENDING:'Esperando pago',APPROVED:'Saldo acreditado',TEST_APPROVED:'Prueba aprobada · sin saldo real',REJECTED:'Pago rechazado',CANCELLED:'Pago cancelado',REFUNDED:'Pago devuelto',CHARGED_BACK:'Contracargo',REVIEW_REQUIRED:'Revisión necesaria'};
