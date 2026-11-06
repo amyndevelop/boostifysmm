@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
+import { reportDatabaseError } from '@/lib/database-errors';
 import { checkOrigin, createSession, digest, rateLimit, requireUser } from '@/lib/auth';
 import { approveDeposit, placeOrder } from '@/lib/orders';
 export type ActionResult = { error?: string; success?: string };
@@ -13,7 +14,8 @@ async function safely(fn: () => Promise<ActionResult>): Promise<ActionResult> {
   try { await checkOrigin(); return await fn(); }
   catch (e) {
     if (e instanceof z.ZodError) return { error: e.issues[0].message };
-    if (e instanceof Prisma.PrismaClientKnownRequestError) return { error: e.code === 'P2002' ? 'Ese registro ya existe.' : 'No pudimos completar la operación. Volvé a intentar.' };
+    const databaseError = reportDatabaseError(e);
+    if (databaseError) return { error: databaseError };
     if (e instanceof Error && e.message.startsWith('NEXT_REDIRECT')) throw e;
     return { error: e instanceof Error ? e.message : 'No pudimos completar la operación.' };
   }
