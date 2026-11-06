@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 // Exercise deployment artifacts, not the full development node_modules directory.
-for (const route of ['registro','login','admin','admin/proveedores']) {
+for (const route of ['registro','login','admin','admin/proveedores','admin/servicios','admin/categorias','admin/servicios/[id]']) {
  const tracePath = `.next/server/app/${route}/page.js.nft.json`;
  const trace = JSON.parse(readFileSync(tracePath,'utf8'));
  for (const asset of ['query_compiler_bg.js','query_compiler_bg.wasm']) {

@@ -40,7 +40,7 @@ Las cuentas creadas por E2E usan direcciones `example.invalid`, se identifican c
 - Libro mayor inmutable mediante trigger y restricciones SQL de saldo no negativo.
 - Transferencias manuales con datos bancarios administrables, comprobantes PNG/JPEG de hasta 2 MB guardados en PostgreSQL y descarga autorizada. No se acredita al subir imágenes. La decisión administrativa es única y auditada.
 - Tickets privados con conversación, respuestas administrativas y notificaciones internas.
-- Administración protegida: métricas agregadas, pedidos, catálogo/precios, solicitudes, proveedores, importación oculta, soporte, datos bancarios y auditoría.
+- Administración protegida: métricas, pedidos, solicitudes, proveedores, soporte, datos bancarios y auditoría. Catálogo paginado con filtros, publicación selectiva, editor de presentación/precios/límites/enlaces/proveedor y categorías editables. Costos nativos, conversión manual a ARS y cálculo de margen; sincronización en lotes que conserva precios propios e historial financiero.
 - Adaptador SMMTAKE basado en el contrato entregado por el usuario. Balance/servicios/estados/refill/cancel están tipados y validados. Las mutaciones están bloqueadas por defecto. Los scripts de arranque usan el proxy de entorno de Node 24 para las conexiones HTTP. Las APIs se cargan desde Administración → Proveedores y APIs, con nombre, URL HTTPS y clave independiente. Las claves se cifran con AES-256-GCM usando PROVIDER_ENCRYPTION_KEY; nunca se devuelven al navegador. La consulta e importación usa el proveedor seleccionado y requiere conectividad real. Otros proveedores deben usar el contrato SMM compatible documentado o incorporar un adaptador específico.
 
 ## Pruebas
@@ -60,7 +60,7 @@ Integración crea/reutiliza exclusivamente `boostify_test` en PostgreSQL **local
 
 ## Migraciones
 
-Tres migraciones SQL en `prisma/migrations`: esquema/índices/finanzas importación de catálogo y metadatos de conexión multi proveedor. `npm run db:migrate` las aplica con una única transacción, advisory lock y SHA-256. Si se modifica una migración aplicada, falla. No mezclar este historial `BoostifyMigration` con `prisma migrate deploy`.
+Cuatro migraciones SQL en `prisma/migrations`: esquema/índices/finanzas importación de catálogo y metadatos de conexión multi proveedor y catálogo administrable con categorías/precios/cotizaciones. `npm run db:migrate` las aplica con una única transacción, advisory lock y SHA-256. Si se modifica una migración aplicada, falla. No mezclar este historial `BoostifyMigration` con `prisma migrate deploy`.
 
 El motor binario de Prisma no está disponible con la política de red inicial. La generación usa el motor JS y el adaptador oficial `@prisma/adapter-pg`; el migrador JS experimental de Prisma 6.19 falla al introspectar el tipo PostgreSQL `name`. Por eso se ejecuta el SQL con `pg` y un historial explícito. El cliente de runtime con adaptador sí está validado. Para futuras migraciones: escribir una nueva carpeta SQL, actualizar el esquema y probar en una base vacía y una existente. No modificar migraciones publicadas. La configuración JS de CLI es experimental; no implica que el sistema esté listo para producción.
 

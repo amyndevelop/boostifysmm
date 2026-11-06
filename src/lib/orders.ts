@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { db } from './db';
+import { convertedCost } from './catalog';
 import { calculatePrice, quantitySchema, validateOrderLink } from './domain';
 export const orderSchema = z.object({ serviceId: z.string().min(1), quantity: quantitySchema, link: z.string(), idempotencyKey: z.uuid(), quotedPrice: z.string().regex(/^\d+\.\d{2}$/) });
 export async function placeOrder(userId: string, input: unknown) {
@@ -18,17 +19,20 @@ export async function placeOrder(userId: string, input: unknown) {
     }
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
     if (user.blocked) throw new Error('Cuenta bloqueada.');
-    const service = await tx.service.findUnique({ where: { id: data.serviceId }, include: { provider: true } });
-    if (!service?.active || !service.provider.active) throw new Error('El servicio no está disponible.');
+    const service = await tx.service.findUnique({ where: { id: data.serviceId }, include: { provider: true,categoryRef:true,source:true } });
+    if (!service?.active || !service.provider.active || (service.categoryRef && !service.categoryRef.active) || (service.source && !service.source.available)) throw new Error('El servicio no está disponible.');
     if (service.provider.kind === 'DEMO' && process.env.APP_MODE !== 'demo') throw new Error('Servicio exclusivo de demostración.');
-    if (service.currency !== 'ARS' || service.provider.currency !== 'ARS') throw new Error('Conversión de moneda pendiente de configuración.');
-    if (data.quantity < service.min || data.quantity > service.max) throw new Error(`Ingresá entre ${service.min} y ${service.max} unidades.`);
+    if(service.currency!=='ARS' || (service.source && service.costCurrency!==service.source.currency)) throw new Error('Conversión de moneda pendiente de configuración.');
+    if(service.provider.kind!=='DEMO') throw new Error('Los pedidos reales aún no están habilitados. No se descontó saldo.');
+    const unitCost=service.source ? convertedCost(service.source.rate,service.source.currency,service.exchangeRate) : service.cost;
+    const providerCost=service.source?.rate ?? service.manualProviderRate;
+    if (data.quantity < Math.max(service.min,service.source?.min ?? service.min) || data.quantity > Math.min(service.max,service.source?.max ?? service.max)) throw new Error(`Ingresá entre ${service.min} y ${service.max} unidades.`);
     const link = validateOrderLink(data.link, service.allowedHosts);
     const price = calculatePrice(data.quantity, service.rate);
     if (price.lte(0) || !price.eq(data.quotedPrice)) throw new Error('El precio cambió. Actualizá y confirmá nuevamente.');
     const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId } });
     if (wallet.currency !== service.currency || wallet.available.lt(price)) throw new Error('Saldo insuficiente. Cargá saldo para continuar.');
-    const order = await tx.order.create({ data: { userId, serviceId: service.id, idempotencyKey: data.idempotencyKey, fingerprint, quantity: data.quantity, link, price, rateSnapshot: service.rate, costSnapshot: new Prisma.Decimal(service.cost).mul(data.quantity).div(1000), serviceName: service.name, network: service.network, providerSnapshot: service.providerId, externalServiceId: service.externalId, currency: service.currency, events: { create: { status: 'PENDING', message: 'Pedido recibido; saldo reservado.' } }, job: { create: {} } } });
+    const order = await tx.order.create({ data: { userId, serviceId: service.id, idempotencyKey: data.idempotencyKey, fingerprint, quantity: data.quantity, link, price, rateSnapshot: service.rate, costSnapshot: new Prisma.Decimal(unitCost).mul(data.quantity).div(1000), providerCostSnapshot:new Prisma.Decimal(providerCost).mul(data.quantity).div(1000),providerCurrencySnapshot:service.costCurrency,exchangeRateSnapshot:service.exchangeRate,serviceName: service.name, network: service.network, providerSnapshot: service.providerId, externalServiceId: service.externalId, currency: service.currency, events: { create: { status: 'PENDING', message: 'Pedido recibido; saldo reservado.' } }, job: { create: {} } } });
     await tx.wallet.update({ where: { id: wallet.id }, data: { available: { decrement: price }, reserved: { increment: price } } });
     await tx.walletTransaction.create({ data: { walletId: wallet.id, key: `reserve:${order.id}`, type: 'RESERVE', amount: price.neg(), reservedDelta: price, reference: order.id } });
     await tx.notification.create({ data: { userId, message: `Recibimos tu pedido ${order.id}.` } });

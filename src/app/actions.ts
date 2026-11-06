@@ -86,18 +86,6 @@ export async function reviewDeposit(_: ActionResult, form: FormData): Promise<Ac
     revalidatePath('/admin'); revalidatePath('/'); return { success: 'Solicitud revisada.' };
   });
 }
-export async function saveService(_: ActionResult, form: FormData): Promise<ActionResult> {
-  return safely(async () => {
-    const actor = await requireUser(true);
-    const data = z.object({ id: z.string(), name: z.string().trim().min(3).max(100), rate: z.string().regex(/^\d+(\.\d{1,2})?$/) }).parse(Object.fromEntries(form));
-    if (new Prisma.Decimal(data.rate).lte(0)) throw new Error('El precio debe ser positivo.');
-    await db.$transaction(async tx => {
-      await tx.service.update({ where: { id: data.id }, data: { name: data.name, rate: data.rate, active: form.get('active') === 'on' } });
-      await tx.auditLog.create({ data: { actorId: actor.id, action: 'UPDATE_SERVICE', reference: data.id } });
-    });
-    revalidatePath('/admin'); revalidatePath('/'); return { success: 'Servicio actualizado. Los pedidos anteriores conservan su tarifa.' };
-  });
-}
 export async function saveBank(_: ActionResult, form: FormData): Promise<ActionResult> {
   return safely(async () => {
     const user = await requireUser(true);

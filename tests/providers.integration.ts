@@ -48,5 +48,11 @@ test('varios proveedores persisten credenciales y catálogos aislados',async t =
   await assert.rejects(readProvider(admin.id,a.id,'balance',async () => { throw new Error('replacement-key'); }),e => e instanceof Error && !e.message.includes('replacement-key'));
   assert.equal((await db.provider.findUniqueOrThrow({where:{id:a.id}})).connectionStatus,'ERROR');
  });
+ await t.test('importa catálogos grandes en varios lotes sin duplicar servicios',async()=>{
+  const transport:typeof fetch=async(_,init)=>Response.json((init!.body as URLSearchParams).get('action')==='balance'?{balance:'50',currency:'USD'}:Array.from({length:501},(_,i)=>({service:i+1,name:`Servicio ${i+1}`,category:'Catálogo amplio',type:'Default',rate:'0.90',min:'50',max:'10000',refill:true,cancel:false})));
+  await readProvider(admin.id,b.id,'services',transport);
+  assert.equal(await db.providerService.count({where:{providerId:b.id,available:true}}),501);
+  assert.equal(await db.providerService.count({where:{providerId:a.id}}),1);
+ });
  await db.$disconnect();
 });

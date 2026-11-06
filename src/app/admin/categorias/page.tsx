@@ -1,0 +1,16 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { db } from '@/lib/db';
+import { requireUser } from '@/lib/auth';
+import { ActionForm } from '@/components/action-form';
+import { saveCategoryAction,deleteCategoryAction } from '../catalog-actions';
+export const dynamic='force-dynamic';
+export default async function Categories(){
+ const user=await requireUser();if(!['ADMIN','SUPER_ADMIN'].includes(user.role))notFound();
+ const categories=await db.serviceCategory.findMany({include:{_count:{select:{services:true}}},orderBy:[{sortOrder:'asc'},{name:'asc'}]});
+ return <main className="admin-shell"><header className="admin-heading"><div><Link href="/admin">← Administración</Link><h1 className="catalog-title">Categorías</h1><p>Organizá el catálogo por red social y tipo de servicio.</p></div><Link className="button outline" href="/admin/servicios">Ver servicios</Link></header>
+ <section aria-label="Nueva categoría" className="card admin-section"><h2>Crear categoría</h2><ActionForm action={saveCategoryAction} label="Crear categoría" className="catalog-form"><label>Nombre<input name="name" required minLength={2} maxLength={100} placeholder="Seguidores premium"/></label><label>Red social<input name="network" required list="social-networks" placeholder="Instagram" maxLength={50}/></label><label className="wide">Descripción<textarea name="description" maxLength={1000}/></label><label>Orden<input name="sortOrder" type="number" min={0} max={100000000} defaultValue={0} required/></label><label className="check"><input name="active" type="checkbox" defaultChecked/> Categoría visible</label></ActionForm></section>
+ <datalist id="social-networks">{['Instagram','TikTok','YouTube','Facebook','WhatsApp','Telegram','X','Spotify'].map(n=><option key={n} value={n}/>)}</datalist>
+ <div className="provider-grid">{categories.map(c=><section key={`${c.id}:${c.version}`} aria-label={`Categoría ${c.name}`} className="card padded"><h2>{c.name}</h2><p>{c.network} · {c._count.services} servicios · {c.active?'Visible':'Oculta'}</p><ActionForm action={saveCategoryAction} label="Guardar categoría"><input name="id" type="hidden" value={c.id}/><input name="version" type="hidden" value={c.version}/><label>Nombre<input name="name" defaultValue={c.name} required minLength={2} maxLength={100}/></label><label>Red social<input name="network" list="social-networks" defaultValue={c.network} required maxLength={50}/></label><label>Descripción<textarea name="description" defaultValue={c.description} maxLength={1000}/></label><label>Orden<input name="sortOrder" type="number" min={0} max={100000000} defaultValue={c.sortOrder} required/></label><label className="check"><input name="active" type="checkbox" defaultChecked={c.active}/> Categoría visible</label></ActionForm><p className="small muted">Ocultar la categoría oculta todos sus servicios al cliente.</p><details><summary>Eliminar categoría vacía</summary><ActionForm action={deleteCategoryAction} label="Eliminar categoría"><input name="id" type="hidden" value={c.id}/><label className="check"><input name="confirm" type="checkbox" required/> Confirmo la eliminación</label></ActionForm></details></section>)}</div>
+ </main>;
+}

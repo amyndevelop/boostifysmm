@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../db';
 import { encryptProviderKey, decryptProviderKey } from './secrets';
 import { validateProviderEndpoint } from './endpoint';
+import { convertedCost } from '../catalog';
 import { SmmtakeAdapter } from './smmtake';
 export const providerConfigSchema = z.object({
  id: z.string().max(100).optional(),
@@ -50,9 +51,26 @@ export async function readProvider(actorId: string, id: string, operation: 'bala
     await tx.$queryRaw`SELECT id FROM "Provider" WHERE id = ${id} FOR UPDATE`;
     const result = await tx.provider.updateMany({where:{id,version:provider.version},data:{connectionStatus:'CONNECTED',lastCheckedAt:new Date(),balance:balance.balance,currency:balance.currency,...(operation === 'services' ? {lastSyncAt:new Date()} : {})}});
     if (!result.count) throw new Error('La configuración cambió durante la consulta.');
-    for (const s of services) {
-      const data = {name:s.name,category:s.category,type:s.type,rate:s.rate,currency:balance.currency,min:s.min,max:s.max,refill:s.refill,cancel:s.cancel,importedAt:new Date()};
-      await tx.providerService.upsert({where:{providerId_externalId:{providerId:id,externalId:s.id}},create:{providerId:id,externalId:s.id,...data},update:data});
+    if(operation === 'services') {
+      await tx.providerService.updateMany({where:{providerId:id},data:{available:false}});
+      const unique=[...new Map(services.map(s=>[s.id,s])).values()];
+      for(let offset=0;offset<unique.length;offset+=500) {
+        const rows=unique.slice(offset,offset+500).map(s=>({id:randomUUID(),externalId:s.id,name:s.name,category:s.category,type:s.type,rate:s.rate,min:s.min,max:s.max,refill:s.refill,cancel:s.cancel}));
+        await tx.$executeRaw`INSERT INTO "ProviderService" (id,"providerId","externalId",name,category,type,rate,currency,min,max,refill,cancel,available,"importedAt")
+          SELECT x.id,${id},x."externalId",x.name,x.category,x.type,x.rate,${balance.currency},x.min,x.max,x.refill,x.cancel,true,CURRENT_TIMESTAMP
+          FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS x(id text,"externalId" text,name text,category text,type text,rate decimal(18,6),min integer,max integer,refill boolean,cancel boolean)
+          ON CONFLICT ("providerId","externalId") DO UPDATE SET name=EXCLUDED.name,category=EXCLUDED.category,type=EXCLUDED.type,rate=EXCLUDED.rate,currency=EXCLUDED.currency,min=EXCLUDED.min,max=EXCLUDED.max,refill=EXCLUDED.refill,cancel=EXCLUDED.cancel,available=true,"importedAt"=EXCLUDED."importedAt"`;
+      }
+      const linked=await tx.service.findMany({where:{providerId:id,source:{available:true}},include:{source:true}});
+      for(const service of linked) {
+        const source=service.source!;
+        if(service.costCurrency!==source.currency || service.min<source.min || service.max>source.max) {
+          await tx.service.update({where:{id:service.id},data:{active:false,version:{increment:1}}});
+        } else {
+          const cost=convertedCost(source.rate,source.currency,service.exchangeRate);
+          if(!cost.eq(service.cost))await tx.service.update({where:{id:service.id},data:{cost,version:{increment:1}}});
+        }
+      }
     }
     await tx.auditLog.create({data:{actorId,action:operation === 'services' ? 'IMPORT_PROVIDER_SERVICES' : 'TEST_PROVIDER_CONNECTION',reference:id}});
   },{timeout:60000});
